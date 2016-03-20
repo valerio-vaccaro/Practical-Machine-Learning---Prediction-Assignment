@@ -1,0 +1,134 @@
+---
+title: "Practical Machine Learning - Prediction Assignment"
+author: "Valerio Vaccaro"
+date: "20 marzo 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction 
+This document contain the code for the prediction assesment developed for the Practical Machine Learning course available on the Coursera platform. The full code is available on the [GitHub repository](https://github.com/ashmtwr/MachineLearning)
+
+### Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+### Data
+The training data for this project are available [here](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv) and the test data are available [here](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)
+
+
+The data for this project come from the Human Activity Recognition dataset published at this address [http://groupware.les.inf.puc-rio.br/har](http://groupware.les.inf.puc-rio.br/har) with Creative Common license and described in the article:
+
+Ugulino, W.; Cardador, D.; Vega, K.; Velloso, E.; Milidiu, R.; Fuks, H. Wearable Computing: Accelerometers' Data Classification of Body Postures and Movements. Proceedings of 21st Brazilian Symposium on Artificial Intelligence. Advances in Artificial Intelligence - SBIA 2012. In: Lecture Notes in Computer Science. , pp. 52-61. Curitiba, PR: Springer Berlin / Heidelberg, 2012. ISBN 978-3-642-34458-9. DOI: 10.1007/978-3-642-34459-6_6. 
+
+### Executive Summary 
+In this project you can follow how to creare a predictor for predict the manner in which they did the exercise; this is the "classe" variable in the training set. 
+
+The Random Forest algorithm perform well in this case and we can generate a model with more than 99% accuracy.
+
+20 different test cases are provided for a final check in the model realized.
+
+## Import and preprocessing data 
+Import the useful libraries and set the working directory and the seed (for reproducibility of the elaboration).
+
+```{r, results='hide'}
+library(rpart)
+library(rpart.plot)
+library(caret)
+library(randomForest)
+library(corrplot)
+setwd("~/R-workspace/8-practical-machine-learning/Project")
+set.seed(112233)
+```
+
+The datasets are previously downloaded in the directory datasets in order to avoid band consumption.
+
+```{r}
+training <- read.csv("./datasets/pml-training.csv")
+dim(training)
+testing <- read.csv("./datasets/pml-testing.csv")
+dim(testing)
+```
+
+Where the training dataset contains 19622 observations and 160 variables and the testing data set contains 20 observations and 160 variables. Remember that the variable “classe” in the training set is the outcome to predict.
+
+We can remove columns full with missing values and all columns not numeric (but we will save class that is not numeric).
+
+```{r}
+training <- training[, colSums(is.na(training)) == 0] 
+testing <- testing[, colSums(is.na(testing)) == 0] 
+classe <- training$classe
+training <- training[, sapply(training, is.numeric)]
+training$classe <- classe
+testing <- testing[, sapply(testing, is.numeric)]
+```
+
+We can remove also the row counter, timestamps and windows variables.
+
+```{r}
+filter <- grepl("^X|timestamp|window", names(training))
+training <- training[, !filter]
+filter <- grepl("^X|timestamp|window", names(testing))
+testing <- testing[, !filter]
+testing <- testing[, sapply(testing, is.numeric)]
+```
+The results are two collections of data where the training dataset contains 19622 observations and 53 variables and the testing data set contains 20 observations and 53 variables also.
+
+We can also plot the correlation between variables ("classe" is a factor and should be removed from the set.)
+```{r}
+corrplot(cor(training[, -length(names(training))]))
+```
+
+We can fit an easy model for partition the data based on "classe" label and print the tree.
+
+```{r}
+prp(rpart(classe ~ ., data=training, method="class"))
+```
+
+### Partitioning the dataset 
+
+Partition the training dataset in order to use 60% data for the training and remaining 40% for testing the model.
+```{r}
+inTrain <- createDataPartition(y=training$classe, p=0.6, list=FALSE)
+splitTraining <- training[inTrain, ]
+splitTesting <- training[-inTrain, ]
+```
+
+## Random Forest
+
+For the machine learning step the algorithm choosen for build the predictive model is the Random Forest algorithm because it robust to outliers/correlated covariates and able to choose the best set of variables. Cross-validation is also applied using 5 folds.
+```{r}
+model <- train(classe ~ ., data=splitTraining, method="rf", trControl=trainControl(method="cv", 5), ntree=250)
+model
+```
+
+Then we can use the model on the test dataset (variable splitTesting) and compare the prediction with real results in a confusionMatrix.
+
+```{r}
+predictions <- predict(model, splitTesting)
+confusionMatrix(splitTesting$classe, predictions)
+```
+
+The result look good with and accuracy of 99,15%
+
+## Prediction on test dataset
+We can finally predict results on the testing dataset removing last column (problem_id).
+
+```{r}
+result <- predict(model, testing[, -length(names(testing))])
+result
+```
+
+## Write prediction results 
+The predictions can be saved in files like requested for the project with the following code.
+
+```{r}
+writeresults = function(x){
+        n = length(x)
+        for(i in 1:n)
+                write.table(x[i],file=paste0("problem_id_",i,".txt"),quote=FALSE,row.names=FALSE,col.names=FALSE)
+}
+writeresults(result)
+```
